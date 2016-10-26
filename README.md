@@ -14,10 +14,9 @@ the marginals of each node to screen.
 4   5    6  
 ```
 
-\P(x,y) = [[1, 0.5]  
-           [0.5, 1]]$ for each edge.  
+P(x,y) = [[1, 0.5], [0.5, 1]] for each edge.  
 
-\P(x) = [0.7, 0.3] for node 1,3,5 and P(x) = [0.1, 0.9] for node 2,4,7.
+P(x) = [0.7, 0.3] for node 1,3,5 and P(x) = [0.1, 0.9] for node 2,4,7.
 
 ### Directory
 ```console
