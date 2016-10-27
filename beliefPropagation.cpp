@@ -1,3 +1,4 @@
+#include<utility>
 #include<iostream>
 #include<vector>
 #include<map>
@@ -45,55 +46,60 @@ public:
     bool isMyParent(node *a) { return this->parent == a; }
     
     void sendMsgToParent() {
-        message &msg = this->parent->msgFromChildren[this->index];
-        //cout << "size " << msg.values.size() << " parent: " << this->parent->index << endl;
+        message msg;
+        msg.values = this->parent->getMsgFromChildIndex(this->index).values;
         for (int i = 0; i < msg.values.size(); i++) {
             msg.values[i] = 0;
             for (int j = 0; j < this->psi.values.size(); j++) {
                 double product = this->psi.values[j] * this->edgeFunction.m[make_pair(i, j)];
-                //cout << "i=" << i << " " << "j=" << j<< " " << this->psi.values[j] << " " << this->edgeFunction.m[make_pair(i,j)]<< endl;
                 if (!this->isLeave()) {
                     for (int k = 0; k < this->children.size(); k++) {
-                        product *= this->msgFromChildren[children[k]->index].values[i];
+                        product *= this->msgFromChildren[this->children[k]->getIndex()].values[j];
                     }
                 }
                 msg.values[i] += product;
             }
         }  
+        this->parent->setMsgFromChild(msg, this->index);
     }
     void sendMsgToChild(node *child) {
         int ii = 0;
-        for (ii = 0; ii < children.size() && children[ii]->index != child->index; ii++) {}
+        for (ii = 0; ii < children.size() && children[ii]->getIndex() != child->getIndex(); ii++) {}
         if (ii >= children.size()) {
-            // Didn't find index with in the children vector.
-            cout << "error: index not in children list." << endl;
+            // Didn't find child with in the children vector.
+            cout << "error: child not in children list." << endl;
             return; 
         } 
-        message &msg = child->msgFromParent;
+        message msg;
+        // set the vector size the same as on the right one.
+        msg.values = child->getMsgFromParent().values;
         for (int i = 0; i < msg.values.size(); i++) {
             msg.values[i] = 0;
             for (int j = 0; j < this->psi.values.size(); j++) {
-                double product = this->psi.values[j] * this->edgeFunction.m[make_pair(i, j)];
+                double product = this->psi.values[j] * child->getEdgeFunction().m[make_pair(i, j)];
                 if (!this->isRoot()) {
-                    product *= this->msgFromParent.values[i];
+                    product *= this->msgFromParent.values[j];
                 }
                 for (int k = 0; k < this->children.size(); k++) {
-                    if (k != child->index) {
-                        product *= this->msgFromChildren[children[k]->index].values[i];
+                    if (children[k] != child) {
+                        product *= this->getMsgFromChildIndex(children[k]->getIndex()).values[j];
                     }
                 }
                 msg.values[i] += product;
             }
         }
+        child->setMsgFromParent(msg);
     }
 
     int getIndex() { return this->index; }
     vector<node*> getChildren() { return this->children; }
-    message getMsgFromParent() { return this->msgFromParent; }
+    message getMsgFromParent() { return this->msgFromParent; } 
     message getMsgFromChildIndex(int index) { return this->msgFromChildren[index]; }
     PsiNode getPsi() { return this->psi; }
     PsiEdge getEdgeFunction() { return this->edgeFunction; }
-     
+    
+    void setMsgFromParent(message &a) { this->msgFromParent = a; }
+    void setMsgFromChild(message &a, int childIndex) {this->msgFromChildren[childIndex] = a;}
 private:
     int index;
     // message that is sent to this node.
@@ -110,6 +116,8 @@ private:
     node* parent;
 };
 
+// For debug.
+// For function printMessages()
 void print(message m) {
     if (m.values.size() != 0)
         cout << "(" << m.values[0];
@@ -119,13 +127,16 @@ void print(message m) {
     cout << ")" << endl;
 }
 // For debug.
+// Ouput each node's messages.
 void printMessages(vector<node*> allNodes) {
     for (int i = 0; i < allNodes.size(); i++) {
-        cout << "Message " << allNodes[i]->getIndex() << " --> its parent" << ": ";
-        print(allNodes[i]->getMsgFromParent());
-        for (int j = 0; j < allNodes[i]->getChildren().size(); i++) {
-            cout << "Message " << allNodes[i]->getIndex() << " --> " << allNodes[i]->getChildren()[i]->getIndex() << ": ";
-            print(allNodes[i]->getMsgFromChildIndex(allNodes[i]->getChildren()[i]->getIndex()));
+        if (!allNodes[i]->isRoot()) {
+            cout << "    Message " << allNodes[i]->getIndex() << " <-- its parent" << ": ";
+            print(allNodes[i]->getMsgFromParent());
+        }
+        for (int j = 0; j < allNodes[i]->getChildren().size(); j++) {
+            cout << "    Message " << allNodes[i]->getIndex() << " <-- " << allNodes[i]->getChildren()[j]->getIndex() << ": ";
+            print(allNodes[i]->getMsgFromChildIndex(allNodes[i]->getChildren()[j]->getIndex()));
         }
     }
 }
@@ -163,14 +174,21 @@ void distribute(node *parent, node *child) {
 
 vector<double> computeMarginal(node *a) {
     vector<double> m;
+    double sum = 0.0;
     for (int i = 0; i < a->getPsi().values.size(); i++) {
         double mi = a->getPsi().values[i];
-        mi *= a->getMsgFromParent().values[i];
-        for (int i = 0; i < a->getChildren().size(); i++) {
-            mi *= a->getMsgFromChildIndex(a->getChildren()[i]->getIndex()).values[i];
+        if (!a->isRoot()) {
+            mi *= a->getMsgFromParent().values[i];
+        }
+        for (int j = 0; j < a->getChildren().size(); j++) {
+            mi *= a->getMsgFromChildIndex(a->getChildren()[j]->getIndex()).values[i];
         }
         m.push_back(mi);
+        sum += mi;
     } 
+    for (int i = 0; i < m.size(); i++) {
+        m[i] /= sum;
+    }
     return m;
 }
 
@@ -178,24 +196,27 @@ void sum_product(node *root, vector<node*> allNodes) {
     for (int i = 0; i < root->getChildren().size(); i++) {
         collect(root, root->getChildren()[i]);
     }
+    cout << "\nMessages at each node after bottom-up collection." << endl;
     printMessages(allNodes);
     for (int i = 0; i < root->getChildren().size(); i++) {
         distribute(root, root->getChildren()[i]);
     }
+    cout << "\nMessages at each node after top-down distribution." << endl;
     printMessages(allNodes);
+    cout << "\nResults: " << endl;
     for (int i = 0; i < allNodes.size(); i++) {
         vector<double> result = computeMarginal(allNodes[i]);
         if (result.size() != 0)
             cout << "The marginal of node " << allNodes[i]->getIndex() << " is (" << result[0];
         for (int j = 1; j < result.size(); j++) {
-            cout << ", " << result[i];
+            cout << ", " << result[j];
         }
         cout << ")" << endl;
     }
+    cout << "\nTotal message passing times = " << (allNodes.size() - 1) * 2 << endl;
 }
 
 int main() {
-
     PsiEdge pEdge;
     pEdge.m[make_pair(0,0)] = 1;
     pEdge.m[make_pair(0,1)] = 0.5;
@@ -213,7 +234,7 @@ int main() {
     vector<node*> allNodes;
     node *n1 = new node(1);
     n1->setPsiNode(P135);
-    
+
     node *n2 = new node(2);
     n2->setPsiNode(P246);
 
@@ -227,7 +248,7 @@ int main() {
     n5->setPsiNode(P135);
 
     node *n6 = new node(6);
-    n4->setPsiNode(P246);
+    n6->setPsiNode(P246);
 
 
     n1->addChild(n2, pEdge);
